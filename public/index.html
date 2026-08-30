@@ -152,6 +152,18 @@
   .flash.on{opacity:1;transition:opacity .04s}
   .flash.trash{background:radial-gradient(120% 90% at 0% 50%,rgba(255,92,114,.4),transparent 62%)}
   .flash.keep{background:radial-gradient(120% 90% at 100% 50%,rgba(61,220,151,.36),transparent 62%)}
+
+  /* The one-time explanation, before the first file of a machine's life is trashed. */
+  .scrim{position:fixed;inset:0;z-index:60;display:flex;align-items:center;
+         justify-content:center;padding:24px;background:rgba(8,9,12,.74);backdrop-filter:blur(3px)}
+  .ask{width:min(430px,92vw);background:var(--panel);border:1px solid var(--line);
+       border-radius:16px;padding:24px;box-shadow:0 30px 90px rgba(0,0,0,.6)}
+  .ask h2{margin:0 0 16px;font-size:21px;font-weight:600;letter-spacing:-.02em}
+  .ask ul{margin:0 0 20px;padding:0 0 0 18px;display:grid;gap:9px}
+  .ask li{font-size:13.5px;line-height:1.5;color:var(--dim)}
+  .ask li b{color:var(--ink);font-weight:600}
+  .ask .act{font-size:16px;padding:13px 10px;gap:9px}
+  .ask .act kbd{font-size:13px;padding:3px 7px;border-bottom-width:2px}
 </style>
 
 <div id="root" tabindex="-1"></div>
@@ -379,7 +391,7 @@ function dossierHtml(file) {
  * password prompt especially — and from there it swallows every key the app needs.
  */
 function reclaimFocus() {
-  if (editing) return;
+  if (editing || confirming) return;
   const active = document.activeElement;
   if (active instanceof HTMLIFrameElement || active instanceof HTMLEmbedElement) {
     active.blur();
@@ -489,9 +501,59 @@ async function trashCurrent(file) {
   return body;
 }
 
+/**
+ * Every other arrow-key surface a Mac user has ever touched — a photo viewer, a slide
+ * deck, a carousel — spends the left arrow on going back. Here it spends a file. So the
+ * first trash of a machine's life says what the arrows actually mean before it acts on
+ * one, and waits. The server remembers across launches (a marker file it writes on the
+ * first successful trash); this flag is only the current page's copy of that answer.
+ */
+let explainTrash = false;
+/** Whether the explanation is up, holding a trash that has not happened yet. */
+let confirming = false;
+
+function askAboutTrash() {
+  confirming = true;
+  const scrim = document.createElement("div");
+  scrim.className = "scrim";
+  scrim.id = "scrim";
+  scrim.innerHTML = `<div class="ask">
+    <h2>\u2190 is not back.</h2>
+    <ul>
+      <li>The arrows are the two verdicts: <b>\u2190 trashes</b> this file,
+        <b>\u2192 keeps</b> it. Neither one steps through the queue.</li>
+      <li>Trashing means the <b>macOS Trash</b> — nothing is deleted, and <kbd>U</kbd>
+        undoes the last decision, right here.</li>
+      <li>Files sit in the Trash until <b>you</b> empty it.</li>
+    </ul>
+    <div class="verdicts">
+      <button class="act t" data-ask="go">Move to Trash <kbd>\u21a9</kbd></button>
+      <button class="act" data-ask="no">Cancel <kbd>esc</kbd></button>
+    </div>
+  </div>`;
+  scrim.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-ask]");
+    if (button) closeAsk(button.dataset.ask === "go");
+  });
+  document.body.appendChild(scrim);
+  // Focusing the button is the point: Enter and Space are then the browser's problem,
+  // and Tab reaches Cancel, without this dialog reimplementing either.
+  scrim.querySelector('[data-ask="go"]').focus();
+}
+
+/** Leave the explanation. `go` means the trash it was holding should now happen. */
+function closeAsk(go) {
+  confirming = false;
+  document.getElementById("scrim")?.remove();
+  if (!go) { reclaimFocus(); return; }
+  explainTrash = false;
+  void decide("trash");
+}
+
 /** Apply a decision to the current card and move on. */
 async function decide(decision) {
-  if (busy || editing || index >= queue.length) return;
+  if (busy || editing || confirming || index >= queue.length) return;
+  if (decision === "trash" && explainTrash) { askAboutTrash(); return; }
   const file = current();
   notice = null;
 
@@ -678,7 +740,7 @@ let keycastTimer = null;
 function showKey(event) {
   // The same guard the real handler uses. Without it Cmd-R paints "Rename" over a
   // reload — precisely the lie this is meant to avoid telling on camera.
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.metaKey || event.ctrlKey || event.altKey || confirming) return;
 
   const entry = editing ? KEYCAST_EDITING[keyName(event)] : BY_KEY.get(keyName(event));
   if (!entry) return;
@@ -730,6 +792,13 @@ addEventListener("keydown", (event) => {
   if (target instanceof HTMLElement &&
       (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (confirming) {
+    // Enter and Space belong to the focused button. Escape cancels. The card's own keys
+    // are not the dialog's to answer.
+    if (keyName(event) === "Escape") { event.preventDefault(); closeAsk(false); }
+    else if (keyName(event) !== "Enter" && event.key !== " ") event.preventDefault();
+    return;
+  }
 
   const action = BY_KEY.get(keyName(event));
   if (!action) return;
@@ -746,6 +815,7 @@ addEventListener("pagehide", () => {
 
 try {
   const response = await fetch("/api/files");
+  explainTrash = response.headers.get("x-file-tinder-explain-trash") !== null;
   queue = await response.json();
   document.title = `file-tinder — ${queue.length} file${queue.length === 1 ? "" : "s"}`;
   render();

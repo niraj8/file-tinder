@@ -2,7 +2,7 @@
 
 Swipe through the loose files in a folder and decide, one keypress at a time, what to trash and what to keep.
 
-![Triaging a Downloads folder: a NASA photo fills the preview pane while the panel beside it lists the file's size, age, and the URL it was downloaded from, and flags a near-identical HEIC of the same photo. Arrow keys deal the next card; R renames one in place.](demo.gif)
+![A galaxy photo fills the preview pane. Beside it a dossier names the file, the folder it sits in, its size, when it was last modified and last opened, and where it was downloaded from. Below that, the legend: Trash on the left arrow, Keep on the right, and Rename, Open and Undo under them.](demo.png)
 
 ## Install
 
@@ -41,6 +41,10 @@ They become a single queue rather than one queue per folder, sorted across all o
 | `r` | rename, with the basename pre-selected (`Enter` commits, `Escape` cancels) |
 | `o` | open in the default app |
 | `u` | undo the last decision |
+
+Every key also has a button in the legend at the bottom of the card, so a mouse works as well as the keyboard.
+
+Everywhere else, `←` means back. Here it spends a file, so the first trash on a machine says so before it happens — that the arrows are the two verdicts rather than navigation, that this is the macOS Trash, and that `u` undoes — then waits for `Enter` (`Escape` backs out). Once, ever. After that `←` trashes straight away.
 
 Renaming refuses to overwrite an existing file, so nothing is ever lost to a name clash. It isn't a verdict either — after renaming you still press `←` or `→`.
 
