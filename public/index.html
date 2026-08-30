@@ -29,10 +29,10 @@
   .prev{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
         overflow:hidden;background:repeating-conic-gradient(#15161d 0% 25%,#12131a 0% 50%) 50%/24px 24px}
   .prev img,.prev video,.prev audio{max-width:100%;max-height:100%;object-fit:contain;display:block}
-  /* Previews never take focus: an embedded PDF viewer swallows the arrow keys the
-     whole app is driven by. Use o to open a file properly instead. */
-  .prev iframe{width:100%;height:100%;border:0;background:#fff;pointer-events:none}
-  .prev video,.prev audio{pointer-events:auto}
+  /* A PDF viewer that takes focus swallows the arrow keys the whole app is driven by.
+     reclaimFocus blurs it back, which leaves the preview free to scroll: a wheel needs
+     no focus, so there is nothing here to block. */
+  .prev iframe{width:100%;height:100%;border:0;background:#fff}
   .prev pre{margin:0;padding:24px;width:100%;height:100%;overflow:auto;font-family:var(--mono);
             font-size:12px;line-height:1.6;color:#c9cddb;white-space:pre-wrap;word-break:break-word}
   .glyph{display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--dimmer);padding:24px}
