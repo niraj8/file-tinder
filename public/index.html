@@ -1,0 +1,425 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>file-tinder</title>
+<style>
+  :root{
+    --bg:#0e0f13; --panel:#171921; --panel2:#1e2029; --line:#2b2e3a;
+    --ink:#e9eaf0; --dim:#8a8fa3; --dimmer:#5c6175;
+    --keep:#3ddc97; --trash:#ff5c72; --skip:#6c8cff; --warn:#ffcf7a;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden}
+  body:focus,#root:focus{outline:none}
+  kbd{font-family:var(--mono);font-size:11px;background:var(--panel2);border:1px solid var(--line);
+      border-bottom-width:2px;border-radius:4px;padding:2px 6px;color:var(--ink)}
+  .muted{color:var(--dim)}
+  .tag{display:inline-block;padding:2px 7px;border-radius:5px;background:var(--panel2);
+       border:1px solid var(--line);font-size:11px;letter-spacing:.04em;color:var(--dim);
+       font-family:var(--mono);text-transform:uppercase}
+
+  .card{height:100vh;display:grid;grid-template-columns:minmax(0,1fr) 400px}
+  @media (max-width:880px){ .card{grid-template-columns:1fr;grid-template-rows:1fr auto} }
+
+  /* preview */
+  .stage{position:relative;min-width:0;min-height:0}
+  .prev{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+        overflow:hidden;background:repeating-conic-gradient(#15161d 0% 25%,#12131a 0% 50%) 50%/24px 24px}
+  .prev img,.prev video,.prev audio{max-width:100%;max-height:100%;object-fit:contain;display:block}
+  /* Previews never take focus: an embedded PDF viewer swallows the arrow keys the
+     whole app is driven by. Use o to open a file properly instead. */
+  .prev iframe{width:100%;height:100%;border:0;background:#fff;pointer-events:none}
+  .prev video,.prev audio{pointer-events:auto}
+  .prev pre{margin:0;padding:24px;width:100%;height:100%;overflow:auto;font-family:var(--mono);
+            font-size:12px;line-height:1.6;color:#c9cddb;white-space:pre-wrap;word-break:break-word}
+  .glyph{display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--dimmer);padding:24px}
+  .glyph .ext{font-family:var(--mono);font-size:52px;font-weight:600;letter-spacing:-.02em;color:var(--dim)}
+  .glyph .note{font-size:12px;max-width:280px;text-align:center;line-height:1.55}
+
+  /* dossier */
+  .dossier{border-left:1px solid var(--line);background:var(--panel);display:flex;
+           flex-direction:column;min-height:0}
+  .dhead{padding:20px 22px 16px;border-bottom:1px solid var(--line)}
+  .dhead h1{margin:10px 0 0;font-size:16px;font-weight:600;line-height:1.4;
+            word-break:break-word;overflow-wrap:anywhere}
+  .rows{flex:1;overflow:auto;padding:6px 0;min-height:0}
+  .row{display:grid;grid-template-columns:100px minmax(0,1fr);gap:12px;padding:9px 22px;align-items:baseline}
+  .row dt{color:var(--dimmer);font-size:10px;text-transform:uppercase;letter-spacing:.07em}
+  .row dd{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.5;
+          word-break:break-word;overflow-wrap:anywhere}
+  .sect{padding:16px 22px 6px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+        color:var(--dimmer);border-top:1px solid var(--line);margin-top:8px}
+  .callout{margin:10px 22px;padding:10px 12px;border-radius:7px;font-size:12px;line-height:1.5}
+  .callout.sib{background:rgba(255,207,122,.08);border:1px solid rgba(255,207,122,.26);color:var(--warn)}
+  .callout.stale{background:rgba(255,92,114,.08);border:1px solid rgba(255,92,114,.26);color:#ffa9b5}
+  .callout.err{background:rgba(255,92,114,.14);border:1px solid rgba(255,92,114,.4);color:#ffc2ca}
+
+  .acts{border-top:1px solid var(--line);padding:14px 22px;display:grid;
+        grid-template-columns:1fr 1fr;gap:8px}
+  .act{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;
+       border-radius:8px;background:var(--panel2);border:1px solid var(--line);font-size:12px}
+  .act.t{color:var(--trash)} .act.k{color:var(--keep)}
+  .act.s{color:var(--skip)} .act.o{color:var(--dim)}
+  body.busy .acts{opacity:.45}
+
+  /* centred screens */
+  .screen{height:100vh;display:flex;flex-direction:column;align-items:center;
+          justify-content:center;gap:26px;text-align:center;padding:24px}
+  .screen h2{margin:0;font-size:30px;font-weight:600;letter-spacing:-.02em}
+  .nums{display:flex;gap:44px;flex-wrap:wrap;justify-content:center}
+  .nums b{display:block;font-family:var(--mono);font-size:34px;line-height:1.1}
+  .nums span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dimmer)}
+
+  .flash{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:40;transition:opacity .28s}
+  .flash.on{opacity:1;transition:opacity .04s}
+  .flash.trash{background:radial-gradient(120% 90% at 0% 50%,rgba(255,92,114,.4),transparent 62%)}
+  .flash.keep{background:radial-gradient(120% 90% at 100% 50%,rgba(61,220,151,.36),transparent 62%)}
+  .flash.skip{background:radial-gradient(110% 90% at 50% 100%,rgba(108,140,255,.34),transparent 62%)}
+</style>
+
+<div id="root" tabindex="-1"></div>
+<div class="flash" id="flash"></div>
+
+<script type="module">
+const root = document.getElementById("root");
+const flashEl = document.getElementById("flash");
+
+let queue = [];
+let index = 0;
+let busy = false;
+let notice = null;
+const decisions = new Map();
+const undoStack = [];
+
+const current = () => queue[index];
+
+const UNITS = ["KB", "MB", "GB", "TB"];
+
+/** A byte count in the largest unit that keeps it readable. */
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  let value = bytes, unit = -1;
+  while (value >= 1024 && unit < UNITS.length - 1) { value /= 1024; unit++; }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${UNITS[unit]}`;
+}
+
+const nowSeconds = () => Date.now() / 1000;
+
+/** How long ago a timestamp was, in the coarsest useful terms. */
+function relative(seconds) {
+  const days = Math.floor((nowSeconds() - seconds) / 86400);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  if (days < 365) return `${Math.round(days / 30)} months ago`;
+  return `${(days / 365).toFixed(1)} years ago`;
+}
+
+const absolute = (seconds) => new Date(seconds * 1000)
+  .toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+/**
+ * Whether a file has sat untouched since it arrived. An access time within a couple of
+ * minutes of the modification time means nothing ever opened it.
+ */
+const neverOpened = (file) => Math.abs(file.atime - file.mtime) < 90;
+
+const extensionOf = (name) => {
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
+};
+
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g,
+  (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+
+const fileUrl = (file) => `/f/${encodeURIComponent(file.name)}`;
+
+const OPAQUE_NOTE = "No preview a browser can render. The dossier is the whole decision.";
+
+const glyphHtml = (ext, note) =>
+  `<div class="glyph"><div class="ext">.${escapeHtml(ext) || "?"}</div>
+   <div class="note">${escapeHtml(note)}</div></div>`;
+
+function previewHtml(file) {
+  const url = fileUrl(file);
+  switch (file.kind) {
+    case "image":
+    case "heic":  return `<img data-fallback src="${url}" alt="">`;
+    case "video": return `<video data-fallback src="${url}" controls muted preload="metadata"></video>`;
+    case "audio": return `<audio data-fallback src="${url}" controls></audio>`;
+    case "pdf":   return `<iframe data-fallback src="${url}#toolbar=0" title="preview"></iframe>`;
+    case "text":  return `<iframe data-fallback src="${url}" title="preview"></iframe>`;
+    case "archive": return `<pre id="archive">Reading archive…</pre>`;
+    default: return glyphHtml(extensionOf(file.name), OPAQUE_NOTE);
+  }
+}
+
+/**
+ * Replace a preview element with a glyph if it fails to load. Wired as a listener
+ * rather than an inline attribute so filenames containing quotes stay harmless.
+ */
+function wirePreviewFallback(file) {
+  const element = root.querySelector("[data-fallback]");
+  if (!element) return;
+  element.addEventListener("error", () => {
+    const glyph = document.createElement("div");
+    glyph.innerHTML = glyphHtml(extensionOf(file.name), "This preview could not be loaded.");
+    element.replaceWith(glyph.firstElementChild);
+  }, { once: true });
+}
+
+async function fillArchive(file) {
+  const target = document.getElementById("archive");
+  if (!target) return;
+  try {
+    const body = await (await fetch(`/api/archive/${encodeURIComponent(file.name)}`)).json();
+    if (body.unreadable || body.total === 0) { target.textContent = "Archive could not be read."; return; }
+    const hidden = body.total - body.entries.length;
+    target.textContent = body.entries.join("\n") + (hidden > 0 ? `\n… and ${hidden} more` : "");
+  } catch {
+    target.textContent = "Archive could not be read.";
+  }
+}
+
+function warningsHtml(file) {
+  const parts = [];
+  if (notice) parts.push(`<div class="callout err">${escapeHtml(notice)}</div>`);
+  if (file.siblings.length) {
+    const count = file.siblings.length;
+    parts.push(`<div class="callout sib">${count} other file${count > 1 ? "s" : ""} share
+      this name once format and revision markers are stripped — likely a duplicate or a
+      superseded revision.</div>`);
+  }
+  const idleDays = (nowSeconds() - file.atime) / 86400;
+  if (idleDays > 60 && file.size > 5e6) {
+    parts.push(`<div class="callout stale">Untouched for ${Math.round(idleDays)} days, and ${
+      formatSize(file.size)} large.</div>`);
+  }
+  return parts.join("");
+}
+
+function dossierHtml(file) {
+  const row = (label, value) => `<div class="row"><dt>${label}</dt><dd>${value}</dd></div>`;
+  const opened = neverOpened(file)
+    ? `never opened<br><span class="muted">since it landed</span>`
+    : `${absolute(file.atime)}<br><span class="muted">${relative(file.atime)}</span>`;
+
+  const siblingRows = file.siblings.length
+    ? `<div class="sect">Possible siblings</div>` +
+      file.siblings.map((s) => row(formatSize(s.size), escapeHtml(s.name))).join("")
+    : "";
+
+  return `<div class="dossier">
+    <div class="dhead">
+      <span class="tag">${escapeHtml(extensionOf(file.name)) || "no ext"}</span>
+      <span class="tag">${index + 1} of ${queue.length}</span>
+      <h1>${escapeHtml(file.name)}</h1>
+    </div>
+    <div class="rows">
+      ${row("Size", formatSize(file.size))}
+      ${row("Modified", `${absolute(file.mtime)}<br><span class="muted">${relative(file.mtime)}</span>`)}
+      ${row("Opened", opened)}
+      <div class="sect">Provenance</div>
+      ${row("Downloader", file.quarantine ? escapeHtml(file.quarantine) : `<span class="muted">unknown</span>`)}
+      ${row("Source", file.whereFrom[0]
+        ? escapeHtml(file.whereFrom[0])
+        : `<span class="muted">no where-from recorded</span>`)}
+      ${file.whereFrom[1] ? row("Referrer", escapeHtml(file.whereFrom[1])) : ""}
+      ${siblingRows}
+    </div>
+    ${warningsHtml(file)}
+    <div class="acts">
+      <div class="act t"><kbd>&larr;</kbd> Trash</div>
+      <div class="act k"><kbd>&rarr;</kbd> Keep</div>
+      <div class="act s"><kbd>&darr;</kbd> Skip</div>
+      <div class="act o"><kbd>o</kbd> Open</div>
+    </div>
+  </div>`;
+}
+
+/**
+ * Pull focus back out of a preview. An embedded PDF viewer autofocuses itself — a
+ * password prompt especially — and from there it swallows every key the app needs.
+ */
+function reclaimFocus() {
+  const active = document.activeElement;
+  if (active instanceof HTMLIFrameElement || active instanceof HTMLEmbedElement) {
+    active.blur();
+  }
+  if (document.activeElement === root || document.activeElement === document.body) return;
+  root.focus({ preventScroll: true });
+}
+
+function render() {
+  document.body.classList.toggle("busy", busy);
+
+  if (queue.length === 0) {
+    root.innerHTML = `<div class="screen"><h2>Nothing to triage.</h2>
+      <p class="muted">No loose files at the top level of this folder.</p></div>`;
+    return;
+  }
+  if (index >= queue.length) { renderDone(); return; }
+
+  const file = current();
+  root.innerHTML = `<div class="card">
+    <div class="stage"><div class="prev">${previewHtml(file)}</div></div>
+    ${dossierHtml(file)}
+  </div>`;
+  wirePreviewFallback(file);
+  reclaimFocus();
+  if (file.kind === "archive") void fillArchive(file);
+}
+
+function renderDone() {
+  let trashed = 0, kept = 0, skipped = 0, reclaimed = 0;
+  for (const [name, decision] of decisions) {
+    const file = queue.find((f) => f.name === name);
+    if (decision === "trash") { trashed++; reclaimed += file?.size ?? 0; }
+    else if (decision === "keep") kept++;
+    else skipped++;
+  }
+  const stat = (value, label, colour) =>
+    `<div><b${colour ? ` style="color:${colour}"` : ""}>${value}</b><span>${label}</span></div>`;
+
+  root.innerHTML = `<div class="screen">
+    <h2>Queue empty.</h2>
+    <div class="nums">
+      ${stat(trashed, "trashed", "var(--trash)")}
+      ${stat(kept, "kept", "var(--keep)")}
+      ${stat(skipped, "skipped", "var(--skip)")}
+      ${stat(formatSize(reclaimed), "reclaimed")}
+    </div>
+  </div>`;
+}
+
+function flash(kind) {
+  flashEl.className = `flash ${kind}`;
+  requestAnimationFrame(() => {
+    flashEl.classList.add("on");
+    setTimeout(() => flashEl.classList.remove("on"), 90);
+  });
+}
+
+/**
+ * Move the file to the Trash. Returns the trash result, or null if it could not be
+ * trashed — in which case a notice explaining why has already been set.
+ */
+async function trashCurrent(file) {
+  const response = await fetch("/api/trash", {
+    method: "POST", body: JSON.stringify({ name: file.name }),
+  });
+  const body = await response.json().catch(() => ({}));
+
+  if (response.status === 410) {
+    notice = `${file.name} was already gone — something removed it outside file-tinder.`;
+    return null;
+  }
+  if (!response.ok) {
+    notice = `Could not trash ${file.name}: ${body.error || "unknown error"}. It was left in place.`;
+    return null;
+  }
+  if (body.putBack === false) {
+    notice = `${file.name} was moved to the Trash by hand, so Finder's Put Back will not work for it.`;
+  } else if (body.certain === false) {
+    notice = `${file.name} is in the Trash, but its exact name there is uncertain — undo may fail.`;
+  }
+  return body;
+}
+
+/** Apply a decision to the current card and move on. */
+async function decide(decision) {
+  if (busy || index >= queue.length) return;
+  const file = current();
+  notice = null;
+
+  if (decision !== "trash") {
+    decisions.set(file.name, decision);
+    undoStack.push({ index, name: file.name, decision, trashed: null });
+    flash(decision);
+    index++;
+    render();
+    return;
+  }
+
+  busy = true;
+  render();
+  const trashed = await trashCurrent(file);
+  busy = false;
+
+  if (trashed === null) {
+    index++;
+    render();
+    return;
+  }
+
+  decisions.set(file.name, decision);
+  undoStack.push({ index, name: file.name, decision, trashed });
+  flash(decision);
+  index++;
+  render();
+}
+
+/** Reverse the last decision, restoring the file if it was trashed. */
+async function undo() {
+  if (busy || undoStack.length === 0) return;
+  const last = undoStack.pop();
+  notice = null;
+
+  if (last.decision === "trash" && last.trashed) {
+    busy = true;
+    render();
+    const response = await fetch("/api/restore", {
+      method: "POST",
+      body: JSON.stringify({ trashedPath: last.trashed.path, name: last.name }),
+    }).catch(() => null);
+    busy = false;
+    if (!response || !response.ok) {
+      notice = `${last.name} could not be restored — it is no longer where it was trashed to.`;
+    }
+  }
+
+  decisions.delete(last.name);
+  index = last.index;
+  render();
+}
+
+function openInDefaultApp() {
+  if (busy || index >= queue.length) return;
+  void fetch("/api/open", { method: "POST", body: JSON.stringify({ name: current().name }) });
+}
+
+addEventListener("keydown", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement &&
+      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  switch (event.key) {
+    case "ArrowLeft":  event.preventDefault(); void decide("trash"); break;
+    case "ArrowRight": event.preventDefault(); void decide("keep"); break;
+    case "ArrowDown":  event.preventDefault(); void decide("skip"); break;
+    case "u": case "U": event.preventDefault(); void undo(); break;
+    case "o": case "O": event.preventDefault(); openInDefaultApp(); break;
+  }
+});
+
+setInterval(reclaimFocus, 250);
+addEventListener("focusin", reclaimFocus);
+
+addEventListener("pagehide", () => {
+  navigator.sendBeacon("/api/quit", "{}");
+});
+
+try {
+  const response = await fetch("/api/files");
+  queue = await response.json();
+  document.title = `file-tinder — ${queue.length} file${queue.length === 1 ? "" : "s"}`;
+  render();
+} catch (error) {
+  root.innerHTML = `<div class="screen"><h2>Could not read the folder.</h2>
+    <p class="muted">${escapeHtml(error.message)}</p></div>`;
+}
+</script>
