@@ -11,6 +11,8 @@ bun run index.ts ~/Downloads
 
 A browser tab opens. Files are served from a local server; nothing leaves your machine. Closing the tab stops the server (Ctrl-C works too).
 
+macOS only — it leans on the system Trash, Spotlight's download provenance, and `sips` for HEIC previews.
+
 The folder defaults to `~/Downloads`, and only loose files are shown — subfolders, symlinks, and dotfiles are skipped.
 
 ### Several folders at once
