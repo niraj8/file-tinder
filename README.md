@@ -4,11 +4,16 @@ Swipe through the loose files in a folder and decide, one keypress at a time, wh
 
 ![Triaging a Downloads folder: a NASA photo fills the preview pane while the panel beside it lists the file's size, age, and the URL it was downloaded from, and flags a near-identical HEIC of the same photo. Arrow keys deal the next card; R renames one in place.](demo.gif)
 
+## Install
+
+```bash
+brew install niraj8/tap/file-tinder
+```
+
 ## Run it
 
 ```bash
-bun install
-bun run index.ts ~/Downloads
+file-tinder ~/Downloads
 ```
 
 A browser tab opens. Files are served from a local server; nothing leaves your machine. Closing the tab stops the server (Ctrl-C works too).
@@ -22,7 +27,7 @@ The folder defaults to `~/Downloads`, and only loose files are shown — subfold
 Pass as many as you like. There are no glob patterns to learn — let the shell expand one:
 
 ```bash
-bun run index.ts ~/Downloads/Images/2026-*
+file-tinder ~/Downloads/Images/2026-*
 ```
 
 They become a single queue rather than one queue per folder, sorted across all of them, and each card says which folder it came from. Sibling detection runs across the whole set too, so the same photo sitting in `2026-01` and `2026-03` shows up as a duplicate. Renaming still keeps a file where it is — it never moves anything between folders.
@@ -42,7 +47,7 @@ Renaming refuses to overwrite an existing file, so nothing is ever lost to a nam
 ### Options
 
 ```bash
-bun run index.ts [folder...] [--order size|mtime|name] [--port N]
+file-tinder [folder...] [--order size|mtime|name] [--port N]
 ```
 
 - `--order size` — largest first (default). `mtime` is oldest first, `name` is alphabetical.
@@ -76,3 +81,15 @@ organize run
 ```
 
 Trash the junk by hand, sort the rest by rule.
+
+## From source
+
+```bash
+bun install
+bun run index.ts ~/Downloads
+bun test
+```
+
+## License
+
+MIT
