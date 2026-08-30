@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { contentTypeFor, kindOf } from "./kinds";
 import { scanFolders, siblingsFor } from "./scan";
 import { trashFile, restoreFile } from "./trash";
+import { iconPng } from "./icon";
 import { renameFile, type RenameFailure } from "./rename";
 import { resolveInFolders } from "./paths";
 import type { Options } from "./options";
@@ -69,15 +70,33 @@ async function readJsonBody(request: Request): Promise<Record<string, string>> {
 
 /**
  * Start serving the app and the target folders. The returned server owns a temporary
- * directory of converted previews, which `stop` removes.
+ * directory of derived files — converted previews and extracted icons — which `stop`
+ * removes.
  */
 export function createServer(options: Options, hooks: ServerHooks = {}): RunningServer {
   const { folders, order } = options;
-  let heicCache: string | null = null;
+  /*
+   * The promise, not the resolved path: `cache ??= await mkdtemp(...)` reads, awaits,
+   * then assigns, so two concurrent requests would each make a directory and only the
+   * last would be recorded — leaking the other past stop().
+   */
+  let cache: Promise<string> | null = null;
+
+  const cacheDir = (): Promise<string> =>
+    (cache ??= mkdtemp(join(tmpdir(), "file-tinder-")));
+
+  /**
+   * Where a derived file for `source` belongs. Keyed on the path and the source's mtime,
+   * so a path reused within one session — trashed, undone, replaced — cannot serve the
+   * previous file's artefact.
+   */
+  const derivedPath = async (source: string, suffix: string): Promise<string> => {
+    const key = `${source}\0${Bun.file(source).lastModified}`;
+    return join(await cacheDir(), `${Buffer.from(key).toString("hex")}${suffix}`);
+  };
 
   const heicJpeg = async (path: string): Promise<Response | null> => {
-    heicCache ??= await mkdtemp(join(tmpdir(), "file-tinder-heic-"));
-    const out = join(heicCache, `${Buffer.from(path).toString("hex")}.jpg`);
+    const out = await derivedPath(path, ".jpg");
     if (!(await Bun.file(out).exists())) {
       const proc = Bun.spawn(["sips", "-s", "format", "jpeg", path, "--out", out],
         { stdout: "ignore", stderr: "ignore" });
@@ -120,6 +139,17 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
         "content-disposition": "inline",
         "accept-ranges": "bytes",
       },
+    });
+  };
+
+  /** The Finder icon for a file, for cards with no preview to show. */
+  const serveIcon = async (candidate: string): Promise<Response> => {
+    const path = resolveInFolders(folders, candidate);
+    if (path === null || !(await Bun.file(path).exists())) return notFound();
+    const png = await derivedPath(path, ".icon.png");
+    if (!(await iconPng(path, png))) return notFound();
+    return new Response(Bun.file(png), {
+      headers: { "content-type": "image/png", "content-disposition": "inline" },
     });
   };
 
@@ -174,6 +204,10 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
       if (isGet && pathname.startsWith("/f/")) {
         return serveFile(decodeURIComponent(pathname.slice("/f/".length)),
           request.headers.get("range"));
+      }
+
+      if (isGet && pathname.startsWith("/icon/")) {
+        return serveIcon(decodeURIComponent(pathname.slice("/icon/".length)));
       }
 
       if (isGet && pathname.startsWith("/api/archive/")) {
@@ -238,7 +272,7 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
     port,
     async stop() {
       server.stop(true);
-      if (heicCache) await rm(heicCache, { recursive: true, force: true });
+      if (cache) await rm(await cache, { recursive: true, force: true });
     },
   };
 }

@@ -2,6 +2,8 @@
 
 Swipe through the loose files in a folder and decide, one keypress at a time, what to trash and what to keep.
 
+![Triaging a Downloads folder: a NASA photo fills the preview pane while the panel beside it lists the file's size, age, and the URL it was downloaded from, and flags a near-identical HEIC of the same photo. Arrow keys deal the next card; R renames one in place.](demo.gif)
+
 ## Run it
 
 ```bash

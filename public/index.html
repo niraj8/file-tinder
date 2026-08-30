@@ -37,6 +37,11 @@
             font-size:12px;line-height:1.6;color:#c9cddb;white-space:pre-wrap;word-break:break-word}
   .glyph{display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--dimmer);padding:24px}
   .glyph .ext{font-family:var(--mono);font-size:52px;font-weight:600;letter-spacing:-.02em;color:var(--dim)}
+  .glyph .icon{width:168px;height:168px;object-fit:contain}
+  /* With no preview to look at, the name is the whole decision — give it room. */
+  .glyph .name{font-family:var(--mono);font-size:15px;line-height:1.6;color:var(--ink);
+               max-width:min(560px,80%);text-align:center;word-break:break-word;
+               overflow-wrap:anywhere}
   .glyph .note{font-size:12px;max-width:280px;text-align:center;line-height:1.55}
 
   /* dossier */
@@ -80,6 +85,18 @@
   .nums b{display:block;font-family:var(--mono);font-size:34px;line-height:1.1}
   .nums span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dimmer)}
 
+  /* The pressed-key indicator. */
+  .keycast{position:fixed;left:32px;bottom:32px;z-index:50;display:flex;align-items:center;
+           gap:12px;padding:14px 20px 14px 16px;border-radius:14px;pointer-events:none;
+           background:rgba(12,13,18,.86);border:1px solid rgba(255,255,255,.14);
+           box-shadow:0 18px 44px rgba(0,0,0,.55);opacity:0;transform:translateY(8px);
+           transition:opacity .22s ease,transform .22s ease;backdrop-filter:blur(6px)}
+  .keycast.on{opacity:1;transform:none;transition-duration:.06s}
+  .keycast .cap{font-family:var(--mono);font-size:22px;line-height:1;min-width:44px;
+                text-align:center;padding:10px 12px;border-radius:9px;color:var(--ink);
+                background:#22242e;border:1px solid #363a48;border-bottom-width:3px}
+  .keycast .what{font-size:15px;letter-spacing:.02em;color:var(--dim)}
+
   .flash{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:40;transition:opacity .28s}
   .flash.on{opacity:1;transition:opacity .04s}
   .flash.trash{background:radial-gradient(120% 90% at 0% 50%,rgba(255,92,114,.4),transparent 62%)}
@@ -88,10 +105,12 @@
 
 <div id="root" tabindex="-1"></div>
 <div class="flash" id="flash"></div>
+<div class="keycast" id="keycast"></div>
 
 <script type="module">
 const root = document.getElementById("root");
 const flashEl = document.getElementById("flash");
+const keycastEl = document.getElementById("keycast");
 
 let queue = [];
 let index = 0;
@@ -154,9 +173,28 @@ const manyFolders = () => new Set(queue.map((f) => f.folder)).size > 1;
 
 const OPAQUE_NOTE = "No preview a browser can render. The dossier is the whole decision.";
 
-const glyphHtml = (ext, note) =>
-  `<div class="glyph"><div class="ext">.${escapeHtml(ext) || "?"}</div>
-   <div class="note">${escapeHtml(note)}</div></div>`;
+/**
+ * The stand-in for a file the browser cannot render: the Finder's own icon for it, and
+ * the full name. Between them they are the whole decision, so neither is abbreviated.
+ */
+const glyphHtml = (file, note) =>
+  `<div class="glyph">
+     <img class="icon" data-icon src="/icon/${encodeURIComponent(file.path)}" alt="">
+     <div class="name">${escapeHtml(file.name)}</div>
+     <div class="note">${escapeHtml(note)}</div>
+   </div>`;
+
+/** Fall back to the bare extension if the Finder icon could not be read. */
+function wireIconFallback(file) {
+  const icon = root.querySelector("[data-icon]");
+  if (!icon) return;
+  icon.addEventListener("error", () => {
+    const ext = document.createElement("div");
+    ext.className = "ext";
+    ext.textContent = `.${extensionOf(file.name) || "?"}`;
+    icon.replaceWith(ext);
+  }, { once: true });
+}
 
 function previewHtml(file) {
   const url = fileUrl(file);
@@ -168,7 +206,7 @@ function previewHtml(file) {
     case "pdf":   return `<iframe data-fallback src="${url}#toolbar=0" title="preview"></iframe>`;
     case "text":  return `<iframe data-fallback src="${url}" title="preview"></iframe>`;
     case "archive": return `<pre id="archive">Reading archive…</pre>`;
-    default: return glyphHtml(extensionOf(file.name), OPAQUE_NOTE);
+    default: return glyphHtml(file, OPAQUE_NOTE);
   }
 }
 
@@ -181,8 +219,9 @@ function wirePreviewFallback(file) {
   if (!element) return;
   element.addEventListener("error", () => {
     const glyph = document.createElement("div");
-    glyph.innerHTML = glyphHtml(extensionOf(file.name), "This preview could not be loaded.");
+    glyph.innerHTML = glyphHtml(file, "This preview could not be loaded.");
     element.replaceWith(glyph.firstElementChild);
+    wireIconFallback(file);
   }, { once: true });
 }
 
@@ -292,6 +331,7 @@ function render() {
     ${dossierHtml(file)}
   </div>`;
   wirePreviewFallback(file);
+  wireIconFallback(file);
   reclaimFocus();
   if (file.kind === "archive") void fillArchive(file);
 }
@@ -514,6 +554,41 @@ function openInDefaultApp() {
   if (busy || index >= queue.length) return;
   void fetch("/api/open", { method: "POST", body: JSON.stringify({ path: current().path }) });
 }
+
+/** What each key is called on the on-screen press indicator. */
+const KEYCAST = {
+  ArrowLeft: { cap: "\u2190", what: "Trash" },
+  ArrowRight: { cap: "\u2192", what: "Keep" },
+  r: { cap: "R", what: "Rename" },
+  o: { cap: "O", what: "Open" },
+  u: { cap: "U", what: "Undo" },
+};
+/** While the rename editor is open only these two mean anything; the rest is typing. */
+const KEYCAST_EDITING = {
+  Enter: { cap: "\u21a9", what: "Confirm" },
+  Escape: { cap: "esc", what: "Cancel" },
+};
+
+let keycastTimer = null;
+
+function showKey(event) {
+  // The same guard the real handler uses. Without it Cmd-R paints "Rename" over a
+  // reload — precisely the lie this is meant to avoid telling on camera.
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  const entry = editing ? KEYCAST_EDITING[key] : KEYCAST[key];
+  if (!entry) return;
+
+  keycastEl.innerHTML = `<span class="cap">${escapeHtml(entry.cap)}</span>
+    <span class="what">${escapeHtml(entry.what)}</span>`;
+  requestAnimationFrame(() => keycastEl.classList.add("on"));
+  clearTimeout(keycastTimer);
+  keycastTimer = setTimeout(() => keycastEl.classList.remove("on"), 850);
+}
+
+// Capture phase, so a key still shows while the rename input has focus.
+addEventListener("keydown", showKey, true);
 
 addEventListener("keydown", (event) => {
   const target = event.target;

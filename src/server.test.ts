@@ -252,3 +252,38 @@ describe("POST /api/rename", () => {
     expect((await rename("../outside.bin", "new.bin")).status).toBe(404);
   });
 });
+
+describe("GET /icon/:path", () => {
+  test("serves the Finder icon as a PNG", async () => {
+    const res = await fetch(url(`/icon/${encodeURIComponent(join(dir, "doc.pdf"))}`));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(bytes.length).toBeGreaterThan(0);
+    // PNG magic, so a failed osascript cannot pass as a picture.
+    expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+
+  test("serves a second request from the cache", async () => {
+    // Each body is read before the next request: an unread body leaves the kept-alive
+    // connection wedged and the second fetch dies with ConnectionClosed.
+    const fetchIcon = async () => {
+      const res = await fetch(url(`/icon/${encodeURIComponent(join(dir, "notes.md"))}`));
+      return { status: res.status, bytes: (await res.arrayBuffer()).byteLength };
+    };
+    const once = await fetchIcon();
+    const twice = await fetchIcon();
+    expect(once.status).toBe(200);
+    expect(twice).toEqual(once);
+  });
+
+  test("404s for a file that is not there", async () => {
+    expect((await fetch(url(`/icon/${encodeURIComponent(join(dir, "ghost.bin"))}`))).status)
+      .toBe(404);
+  });
+
+  test("refuses a path outside the folder", async () => {
+    expect((await fetch(url(`/icon/${encodeURIComponent(join(dir, "../../etc/passwd"))}`))).status)
+      .toBe(404);
+  });
+});
