@@ -9,6 +9,9 @@ import { iconPng } from "./icon";
 import { renameFile, type RenameFailure } from "./rename";
 import { resolveInFolders } from "./paths";
 import type { Options } from "./options";
+// Inlined at build time rather than read from disk: the compiled binary Homebrew
+// ships has no public/ next to it.
+import appHtml from "../public/index.html" with { type: "text" };
 
 /** A running file-tinder server. */
 export interface RunningServer {
@@ -28,7 +31,6 @@ export interface ServerHooks {
   readonly onActivity?: () => void;
 }
 
-const APP_HTML = join(import.meta.dir, "..", "public", "index.html");
 const ARCHIVE_LIMIT = 40;
 
 /** How each rename refusal is reported, mirroring the other mutations' statuses. */
@@ -185,7 +187,7 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
       const isPost = request.method === "POST";
 
       if (isGet && (pathname === "/" || pathname === "/index.html")) {
-        return new Response(Bun.file(APP_HTML), {
+        return new Response(appHtml, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }

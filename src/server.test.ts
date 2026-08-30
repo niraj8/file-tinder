@@ -275,7 +275,9 @@ describe("GET /icon/:path", () => {
     const twice = await fetchIcon();
     expect(once.status).toBe(200);
     expect(twice).toEqual(once);
-  });
+    // Generous: the first icon shells out to Quick Look, which is slow enough to blow
+    // the default 5s timeout when the whole suite is running in parallel.
+  }, 30_000);
 
   test("404s for a file that is not there", async () => {
     expect((await fetch(url(`/icon/${encodeURIComponent(join(dir, "ghost.bin"))}`))).status)

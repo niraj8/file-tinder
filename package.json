@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "file-tinder": "./index.ts" },
+  "bin": {
+    "file-tinder": "./index.ts"
+  },
   "scripts": {
     "start": "bun run index.ts",
     "test": "bun test",

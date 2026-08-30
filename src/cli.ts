@@ -13,7 +13,7 @@ const DEFAULT_PORT = 8777;
 /** Help text, printed for --help and after a bad argument. */
 export const USAGE = `file-tinder — swipe through the loose files in a folder.
 
-  bun run index.ts [folder...] [--order size|mtime|name] [--port N]
+  file-tinder [folder...] [--order size|mtime|name] [--port N]
 
   folder   one or more, defaults to ~/Downloads. Several folders make one queue,
            so let the shell expand a glob: ~/Downloads/Images/2026-*
