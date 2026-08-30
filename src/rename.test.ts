@@ -42,25 +42,26 @@ describe("renameFile", () => {
 
   test("renames the file and reports the name that landed", async () => {
     const folder = await folderWith("old.pdf");
-    expect(await renameFile(folder, "old.pdf", "new.pdf")).toEqual({ ok: true, name: "new.pdf" });
+    expect(await renameFile([folder], join(folder, "old.pdf"), "new.pdf"))
+      .toEqual({ ok: true, name: "new.pdf", path: join(folder, "new.pdf") });
     expect(await readdir(folder)).toEqual(["new.pdf"]);
   });
 
   test("trims the new name before using it", async () => {
     const folder = await folderWith("old.pdf");
-    expect(await renameFile(folder, "old.pdf", "  new.pdf  ")).toEqual({ ok: true, name: "new.pdf" });
+    expect(await renameFile([folder], join(folder, "old.pdf"), "  new.pdf  ")).toEqual({ ok: true, name: "new.pdf", path: join(folder, "new.pdf") });
     expect(await readdir(folder)).toEqual(["new.pdf"]);
   });
 
   test("renaming a file to its own name is a no-op, not a collision", async () => {
     const folder = await folderWith("same.pdf");
-    expect(await renameFile(folder, "same.pdf", "same.pdf")).toEqual({ ok: true, name: "same.pdf" });
+    expect(await renameFile([folder], join(folder, "same.pdf"), "same.pdf")).toMatchObject({ ok: true, name: "same.pdf" });
     expect(await readdir(folder)).toEqual(["same.pdf"]);
   });
 
   test("refuses to overwrite an existing file", async () => {
     const folder = await folderWith("old.pdf", "taken.pdf");
-    const result = await renameFile(folder, "old.pdf", "taken.pdf");
+    const result = await renameFile([folder], join(folder, "old.pdf"), "taken.pdf");
     expect(result.ok).toBe(false);
     expect(result).toMatchObject({ reason: "collision" });
     expect((await readdir(folder)).sort()).toEqual(["old.pdf", "taken.pdf"]);
@@ -69,14 +70,14 @@ describe("renameFile", () => {
 
   test("allows a rename that only changes case", async () => {
     const folder = await folderWith("Report.pdf");
-    expect(await renameFile(folder, "Report.pdf", "report.pdf"))
-      .toEqual({ ok: true, name: "report.pdf" });
+    expect(await renameFile([folder], join(folder, "Report.pdf"), "report.pdf"))
+      .toMatchObject({ ok: true, name: "report.pdf" });
     expect(await readdir(folder)).toEqual(["report.pdf"]);
   });
 
   test("reports an invalid name without touching the disk", async () => {
     const folder = await folderWith("old.pdf");
-    expect(await renameFile(folder, "old.pdf", ".hidden")).toMatchObject({
+    expect(await renameFile([folder], join(folder, "old.pdf"), ".hidden")).toMatchObject({
       ok: false, reason: "invalid",
     });
     expect(await readdir(folder)).toEqual(["old.pdf"]);
@@ -84,14 +85,31 @@ describe("renameFile", () => {
 
   test("refuses a new name that escapes the folder", async () => {
     const folder = await folderWith("old.pdf");
-    expect(await renameFile(folder, "old.pdf", "sub/new.pdf")).toMatchObject({
+    expect(await renameFile([folder], join(folder, "old.pdf"), "sub/new.pdf")).toMatchObject({
       ok: false, reason: "invalid",
     });
   });
 
+  test("a name taken in another folder is not a collision", async () => {
+    const one = await folderWith("old.pdf");
+    const two = await folderWith("taken.pdf");
+    expect(await renameFile([one, two], join(one, "old.pdf"), "taken.pdf"))
+      .toMatchObject({ ok: true, name: "taken.pdf" });
+    expect(await readdir(one)).toEqual(["taken.pdf"]);
+    expect(await readdir(two)).toEqual(["taken.pdf"]);
+  });
+
+  test("refuses a path outside every folder being triaged", async () => {
+    const one = await folderWith("old.pdf");
+    const two = await folderWith("other.pdf");
+    expect(await renameFile([two], join(one, "old.pdf"), "new.pdf"))
+      .toMatchObject({ ok: false, reason: "unresolvable" });
+    expect(await readdir(one)).toEqual(["old.pdf"]);
+  });
+
   test("reports a file that is no longer there", async () => {
     const folder = await folderWith();
-    expect(await renameFile(folder, "gone.pdf", "new.pdf")).toMatchObject({
+    expect(await renameFile([folder], join(folder, "gone.pdf"), "new.pdf")).toMatchObject({
       ok: false, reason: "vanished",
     });
   });

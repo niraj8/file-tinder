@@ -25,9 +25,14 @@ try {
   process.exit(1);
 }
 
-const folderStat = await stat(options.folder).catch(() => null);
-if (!folderStat?.isDirectory()) {
-  console.error(`file-tinder: ${options.folder} is not a folder`);
+const notFolders = (await Promise.all(options.folders.map(async (folder) => {
+  const folderStat = await stat(folder).catch(() => null);
+  return folderStat?.isDirectory() ? null : folder;
+}))).filter((folder) => folder !== null);
+
+if (notFolders.length > 0) {
+  // Every bad path at once: a mistyped glob usually produces more than one.
+  console.error(notFolders.map((folder) => `file-tinder: ${folder} is not a folder`).join("\n"));
   process.exit(1);
 }
 
@@ -64,7 +69,7 @@ try {
 }
 
 const url = `http://localhost:${server.port}`;
-console.log(`file-tinder  ${options.folder}\n${url}\n\nCtrl-C to stop.`);
+console.log(`file-tinder  ${options.folders.join("\n             ")}\n${url}\n\nCtrl-C to stop.`);
 Bun.spawn(["open", url], { stdout: "ignore", stderr: "ignore" });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

@@ -144,7 +144,13 @@ const extensionOf = (name) => {
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g,
   (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 
-const fileUrl = (file) => `/f/${encodeURIComponent(file.name)}`;
+const fileUrl = (file) => `/f/${encodeURIComponent(file.path)}`;
+
+/** The folder a file came from, named the way you would say it out loud. */
+const folderLabel = (path) => path.split("/").filter(Boolean).pop() ?? path;
+
+/** True once the queue spans more than one folder, which decides whether to show it. */
+const manyFolders = () => new Set(queue.map((f) => f.folder)).size > 1;
 
 const OPAQUE_NOTE = "No preview a browser can render. The dossier is the whole decision.";
 
@@ -184,7 +190,7 @@ async function fillArchive(file) {
   const target = document.getElementById("archive");
   if (!target) return;
   try {
-    const body = await (await fetch(`/api/archive/${encodeURIComponent(file.name)}`)).json();
+    const body = await (await fetch(`/api/archive/${encodeURIComponent(file.path)}`)).json();
     if (body.unreadable || body.total === 0) { target.textContent = "Archive could not be read."; return; }
     const hidden = body.total - body.entries.length;
     target.textContent = body.entries.join("\n") + (hidden > 0 ? `\n… and ${hidden} more` : "");
@@ -213,8 +219,11 @@ function warningsHtml(file) {
 /** The sibling section, heading included, or nothing at all when there are none. */
 function siblingsHtml(file) {
   if (file.siblings.length === 0) return "";
+  const elsewhere = manyFolders();
   return `<div class="sect">Possible siblings</div>` + file.siblings
-    .map((s) => `<div class="row"><dt>${formatSize(s.size)}</dt><dd>${escapeHtml(s.name)}</dd></div>`)
+    .map((s) => `<div class="row"><dt>${formatSize(s.size)}</dt><dd>${escapeHtml(s.name)}${
+      elsewhere ? `<br><span class="muted">${escapeHtml(folderLabel(s.folder))}</span>` : ""
+    }</dd></div>`)
     .join("");
 }
 
@@ -231,6 +240,7 @@ function dossierHtml(file) {
       <h1 id="title">${escapeHtml(file.name)}</h1>
     </div>
     <div class="rows">
+      ${manyFolders() ? row("Folder", escapeHtml(folderLabel(file.folder))) : ""}
       ${row("Size", formatSize(file.size))}
       ${row("Modified", `${absolute(file.mtime)}<br><span class="muted">${relative(file.mtime)}</span>`)}
       ${row("Opened", opened)}
@@ -271,7 +281,7 @@ function render() {
 
   if (queue.length === 0) {
     root.innerHTML = `<div class="screen"><h2>Nothing to triage.</h2>
-      <p class="muted">No loose files at the top level of this folder.</p></div>`;
+      <p class="muted">No loose files at the top level of these folders.</p></div>`;
     return;
   }
   if (index >= queue.length) { renderDone(); return; }
@@ -288,8 +298,8 @@ function render() {
 
 function renderDone() {
   let trashed = 0, kept = 0, reclaimed = 0;
-  for (const [name, decision] of decisions) {
-    const file = queue.find((f) => f.name === name);
+  for (const [path, decision] of decisions) {
+    const file = queue.find((f) => f.path === path);
     if (decision === "trash") { trashed++; reclaimed += file?.size ?? 0; }
     else kept++;
   }
@@ -320,7 +330,7 @@ function flash(kind) {
  */
 async function trashCurrent(file) {
   const response = await fetch("/api/trash", {
-    method: "POST", body: JSON.stringify({ name: file.name }),
+    method: "POST", body: JSON.stringify({ path: file.path }),
   });
   const body = await response.json().catch(() => ({}));
 
@@ -347,8 +357,8 @@ async function decide(decision) {
   notice = null;
 
   if (decision !== "trash") {
-    decisions.set(file.name, decision);
-    undoStack.push({ index, name: file.name, decision, trashed: null });
+    decisions.set(file.path, decision);
+    undoStack.push({ index, path: file.path, name: file.name, decision, trashed: null });
     flash(decision);
     index++;
     render();
@@ -366,8 +376,8 @@ async function decide(decision) {
     return;
   }
 
-  decisions.set(file.name, decision);
-  undoStack.push({ index, name: file.name, decision, trashed });
+  decisions.set(file.path, decision);
+  undoStack.push({ index, path: file.path, name: file.name, decision, trashed });
   flash(decision);
   index++;
   render();
@@ -384,7 +394,7 @@ async function undo() {
     render();
     const response = await fetch("/api/restore", {
       method: "POST",
-      body: JSON.stringify({ trashedPath: last.trashed.path, name: last.name }),
+      body: JSON.stringify({ trashedPath: last.trashed.path, path: last.path }),
     }).catch(() => null);
     busy = false;
     if (!response || !response.ok) {
@@ -392,7 +402,7 @@ async function undo() {
     }
   }
 
-  decisions.delete(last.name);
+  decisions.delete(last.path);
   index = last.index;
   render();
 }
@@ -460,7 +470,7 @@ async function commitRename(input) {
   const wanted = input.value;
   input.disabled = true;
   const response = await fetch("/api/rename", {
-    method: "POST", body: JSON.stringify({ name: file.name, newName: wanted }),
+    method: "POST", body: JSON.stringify({ path: file.path, newName: wanted }),
   }).catch(() => null);
   const body = await response?.json().catch(() => ({})) ?? {};
   input.disabled = false;
@@ -476,6 +486,7 @@ async function commitRename(input) {
 
   const before = file.name;
   file.name = body.name;
+  file.path = body.path;
   /*
    * Only this card's siblings are refreshed. Every other card's list still reflects the
    * old name until the next run — a name heuristic that informs and never acts, so a
@@ -501,7 +512,7 @@ async function commitRename(input) {
 
 function openInDefaultApp() {
   if (busy || index >= queue.length) return;
-  void fetch("/api/open", { method: "POST", body: JSON.stringify({ name: current().name }) });
+  void fetch("/api/open", { method: "POST", body: JSON.stringify({ path: current().path }) });
 }
 
 addEventListener("keydown", (event) => {
@@ -532,7 +543,7 @@ try {
   document.title = `file-tinder — ${queue.length} file${queue.length === 1 ? "" : "s"}`;
   render();
 } catch (error) {
-  root.innerHTML = `<div class="screen"><h2>Could not read the folder.</h2>
+  root.innerHTML = `<div class="screen"><h2>Could not read the folders.</h2>
     <p class="muted">${escapeHtml(error.message)}</p></div>`;
 }
 </script>

@@ -16,7 +16,8 @@ describe("stemOf", () => {
       .not.toBe(stemOf("Acct_Statement_XXXXXXXX9924_15082026.qif")));
 });
 
-const named = (...names: string[]) => names.map((name) => ({ name, size: 1 }));
+const named = (...names: string[]) =>
+  names.map((name) => ({ path: `/downloads/${name}`, name, size: 1 }));
 
 describe("siblingsOf", () => {
   test("pairs the same photo in two formats", () => {
@@ -66,6 +67,22 @@ describe("stem truncation", () => {
       "Screenshot 2026-08-21 at 10.03.29 PM.png",
       "Screenshot 2026-08-18 at 5.28.00 PM.PNG",
     );
+    expect(siblingsOf(files[0]!, files)).toEqual([]);
+  });
+});
+
+describe("siblingsOf across folders", () => {
+  test("pairs the same filename living in two folders", () => {
+    const files = [
+      { path: "/photos/2026-01/IMG_2534.HEIC", name: "IMG_2534.HEIC", size: 1 },
+      { path: "/photos/2026-02/IMG_2534.HEIC", name: "IMG_2534.HEIC", size: 1 },
+    ];
+    expect(siblingsOf(files[0]!, files).map((f) => f.path))
+      .toEqual(["/photos/2026-02/IMG_2534.HEIC"]);
+  });
+
+  test("still excludes the file itself, not merely its name", () => {
+    const files = [{ path: "/photos/IMG_1.HEIC", name: "IMG_1.HEIC", size: 1 }];
     expect(siblingsOf(files[0]!, files)).toEqual([]);
   });
 });

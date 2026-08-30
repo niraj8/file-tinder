@@ -7,6 +7,8 @@
 
 /** The minimum a file needs to take part in sibling matching. */
 export interface NamedFile {
+  /** Absolute path. Identity, since two folders can hold the same filename. */
+  readonly path: string;
   readonly name: string;
   readonly size: number;
 }
@@ -28,9 +30,13 @@ export function stemOf(name: string): string {
     .slice(0, STEM_LENGTH);
 }
 
-/** Other files in the same queue that share this file's stem. */
+/**
+ * Other files in the same queue that share this file's stem. Matching runs across every
+ * folder being triaged: the same name in two of them is the most interesting duplicate
+ * there is, not a case to exclude.
+ */
 export function siblingsOf<T extends NamedFile>(file: NamedFile, all: readonly T[]): T[] {
   const stem = stemOf(file.name);
   if (stem === "") return [];
-  return all.filter((other) => other.name !== file.name && stemOf(other.name) === stem);
+  return all.filter((other) => other.path !== file.path && stemOf(other.name) === stem);
 }

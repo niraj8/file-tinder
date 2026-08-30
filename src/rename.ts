@@ -7,7 +7,8 @@
  * `renameFile`.
  */
 import { lstat, rename } from "node:fs/promises";
-import { resolveInFolder } from "./paths";
+import { basename, dirname } from "node:path";
+import { resolveInFolder, resolveInFolders } from "./paths";
 
 /** macOS caps a single path component at 255 bytes. */
 const NAME_LIMIT = 255;
@@ -32,7 +33,7 @@ export function validateName(name: string): string | null {
 export type RenameFailure = "invalid" | "unresolvable" | "vanished" | "collision";
 
 export type RenameResult =
-  | { readonly ok: true; readonly name: string }
+  | { readonly ok: true; readonly name: string; readonly path: string }
   | { readonly ok: false; readonly reason: RenameFailure; readonly message: string };
 
 const failed = (reason: RenameFailure, message: string): RenameResult =>
@@ -44,29 +45,30 @@ async function inodeOf(path: string): Promise<number | null> {
 }
 
 /**
- * Rename `oldName` to `newName` inside `folder`. The new name is trimmed first, so the
- * returned name is what actually landed on disk.
+ * Rename the file at `path` to `newName`, in the folder it already lives in. Renaming is
+ * never a move: `newName` is a bare name, so a card cannot leave its folder.
  *
+ * The new name is trimmed first, so the returned name is what actually landed on disk.
  * Renaming a file to the name it already has succeeds without touching the disk: it is
  * what you get for pressing Enter without editing anything, and refusing it would be
  * pure friction.
  */
 export async function renameFile(
-  folder: string,
-  oldName: string,
+  folders: readonly string[],
+  path: string,
   newName: string,
 ): Promise<RenameResult> {
   const invalid = validateName(newName);
   if (invalid !== null) return failed("invalid", invalid);
 
   const trimmed = newName.trim();
-  const from = resolveInFolder(folder, oldName);
-  const to = resolveInFolder(folder, trimmed);
+  const from = resolveInFolders(folders, path);
+  const to = from === null ? null : resolveInFolder(dirname(from), trimmed);
   if (from === null || to === null) return failed("unresolvable", "that name is not allowed here");
 
   const fromInode = await inodeOf(from);
-  if (fromInode === null) return failed("vanished", `${oldName} is no longer there`);
-  if (from === to) return { ok: true, name: trimmed };
+  if (fromInode === null) return failed("vanished", `${basename(path)} is no longer there`);
+  if (from === to) return { ok: true, name: trimmed, path: to };
 
   /*
    * Not `exists(to)`: on a case-insensitive volume — the macOS default — renaming
@@ -84,5 +86,5 @@ export async function renameFile(
   } catch (error) {
     return failed("vanished", (error as Error).message);
   }
-  return { ok: true, name: trimmed };
+  return { ok: true, name: trimmed, path: to };
 }

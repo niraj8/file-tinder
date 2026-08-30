@@ -1,12 +1,12 @@
 /** The local HTTP server: the app, the file bytes, and the mutations. */
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { contentTypeFor, kindOf } from "./kinds";
-import { scanFolder, siblingsFor } from "./scan";
+import { scanFolders, siblingsFor } from "./scan";
 import { trashFile, restoreFile } from "./trash";
 import { renameFile, type RenameFailure } from "./rename";
-import { resolveInFolder } from "./paths";
+import { resolveInFolders } from "./paths";
 import type { Options } from "./options";
 
 /** A running file-tinder server. */
@@ -68,16 +68,16 @@ async function readJsonBody(request: Request): Promise<Record<string, string>> {
 }
 
 /**
- * Start serving the app and the target folder. The returned server owns a temporary
+ * Start serving the app and the target folders. The returned server owns a temporary
  * directory of converted previews, which `stop` removes.
  */
 export function createServer(options: Options, hooks: ServerHooks = {}): RunningServer {
-  const { folder, order } = options;
+  const { folders, order } = options;
   let heicCache: string | null = null;
 
-  const heicJpeg = async (path: string, name: string): Promise<Response | null> => {
+  const heicJpeg = async (path: string): Promise<Response | null> => {
     heicCache ??= await mkdtemp(join(tmpdir(), "file-tinder-heic-"));
-    const out = join(heicCache, `${Buffer.from(name).toString("hex")}.jpg`);
+    const out = join(heicCache, `${Buffer.from(path).toString("hex")}.jpg`);
     if (!(await Bun.file(out).exists())) {
       const proc = Bun.spawn(["sips", "-s", "format", "jpeg", path, "--out", out],
         { stdout: "ignore", stderr: "ignore" });
@@ -88,15 +88,16 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
     });
   };
 
-  const serveFile = async (name: string, rangeHeader: string | null): Promise<Response> => {
-    const path = resolveInFolder(folder, name);
+  const serveFile = async (candidate: string, rangeHeader: string | null): Promise<Response> => {
+    const path = resolveInFolders(folders, candidate);
     if (path === null) return notFound();
 
     const file = Bun.file(path);
     if (!(await file.exists())) return notFound();
 
+    const name = basename(path);
     if (kindOf(name) === "heic") {
-      const converted = await heicJpeg(path, name);
+      const converted = await heicJpeg(path);
       if (converted) return converted;
     }
 
@@ -122,12 +123,12 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
     });
   };
 
-  const listArchive = async (name: string): Promise<Response> => {
-    const path = resolveInFolder(folder, name);
-    if (path === null || kindOf(name) !== "archive") return notFound();
+  const listArchive = async (candidate: string): Promise<Response> => {
+    const path = resolveInFolders(folders, candidate);
+    if (path === null || kindOf(basename(path)) !== "archive") return notFound();
     if (!(await Bun.file(path).exists())) return notFound();
 
-    const isZip = name.toLowerCase().endsWith(".zip");
+    const isZip = path.toLowerCase().endsWith(".zip");
     const proc = Bun.spawn(isZip ? ["unzip", "-Z1", path] : ["tar", "-tf", path],
       { stdout: "pipe", stderr: "ignore" });
     const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
@@ -137,10 +138,10 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
     return json({ entries: all.slice(0, ARCHIVE_LIMIT), total: all.length });
   };
 
-  /** Resolve the `name` in a mutation request, or answer 404 on the caller's behalf. */
+  /** Resolve the `path` in a mutation request, or answer 404 on the caller's behalf. */
   const targetOf = async (request: Request) => {
     const body = await readJsonBody(request);
-    const path = body.name ? resolveInFolder(folder, body.name) : null;
+    const path = body.path ? resolveInFolders(folders, body.path) : null;
     return { body, path };
   };
 
@@ -160,8 +161,13 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
       }
 
       if (isGet && pathname === "/api/files") {
-        return new Response(JSON.stringify(await scanFolder(folder, order)), {
-          headers: { "content-type": "application/json", "x-file-tinder-folder": folder },
+        return new Response(JSON.stringify(await scanFolders(folders, order)), {
+          headers: {
+            "content-type": "application/json",
+            // JSON, not a delimiter: a header cannot hold a newline and a path can hold
+            // anything else.
+            "x-file-tinder-folders": JSON.stringify(folders),
+          },
         });
       }
 
@@ -198,10 +204,15 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
 
       if (isPost && pathname === "/api/rename") {
         const body = await readJsonBody(request);
-        if (!body.name || typeof body.newName !== "string") return notFound();
-        const result = await renameFile(folder, body.name, body.newName);
+        if (!body.path || typeof body.newName !== "string") return notFound();
+        const result = await renameFile(folders, body.path, body.newName);
         if (!result.ok) return json({ error: result.message }, RENAME_STATUS[result.reason]);
-        return json({ ok: true, name: result.name, siblings: await siblingsFor(folder, result.name) });
+        return json({
+          ok: true,
+          name: result.name,
+          path: result.path,
+          siblings: await siblingsFor(folders, result.path),
+        });
       }
 
       if (isPost && pathname === "/api/open") {

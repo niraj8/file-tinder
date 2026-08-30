@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile, rm, symlink, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseQuarantineAgent, readWhereFrom, orderFiles } from "./metadata";
-import { scanFolder } from "./scan";
+import { scanFolders } from "./scan";
 
 describe("parseQuarantineAgent", () => {
   test("takes the app name from the third field", () => {
@@ -88,14 +88,14 @@ describe("scanFolder", () => {
 
   test("returns only top-level regular files", async () => {
     const dir = await fixture();
-    const names = (await scanFolder(dir, "name")).map((f) => f.name);
+    const names = (await scanFolders([dir], "name")).map((f) => f.name);
     expect(names).toEqual(["a.pdf", "b.txt"]);
     await rm(dir, { recursive: true, force: true });
   });
 
   test("never recurses into directories", async () => {
     const dir = await fixture();
-    const names = (await scanFolder(dir, "name")).map((f) => f.name);
+    const names = (await scanFolders([dir], "name")).map((f) => f.name);
     expect(names).not.toContain("nested.png");
     expect(names).not.toContain("Images");
     await rm(dir, { recursive: true, force: true });
@@ -103,7 +103,7 @@ describe("scanFolder", () => {
 
   test("skips dotfiles and symlinks", async () => {
     const dir = await fixture();
-    const names = (await scanFolder(dir, "name")).map((f) => f.name);
+    const names = (await scanFolders([dir], "name")).map((f) => f.name);
     expect(names).not.toContain(".hidden");
     expect(names).not.toContain("link.pdf");
     await rm(dir, { recursive: true, force: true });
@@ -113,7 +113,7 @@ describe("scanFolder", () => {
     const dir = await mkdtemp(join(tmpdir(), "file-tinder-scan-"));
     await writeFile(join(dir, "Form67.csv"), "aaa");
     await writeFile(join(dir, "Form67_filled.csv"), "aaaaa");
-    const [first] = await scanFolder(dir, "size");
+    const [first] = await scanFolders([dir], "size");
     expect(first!.name).toBe("Form67_filled.csv");
     expect(first!.size).toBe(5);
     expect(typeof first!.mtime).toBe("number");
@@ -124,7 +124,49 @@ describe("scanFolder", () => {
 
   test("is empty for an empty folder", async () => {
     const dir = await mkdtemp(join(tmpdir(), "file-tinder-scan-"));
-    expect(await scanFolder(dir, "size")).toEqual([]);
+    expect(await scanFolders([dir], "size")).toEqual([]);
     await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("scanFolders across several folders", () => {
+  const folders: string[] = [];
+  const folderWith = async (...names: string[]) => {
+    const dir = await mkdtemp(join(tmpdir(), "file-tinder-multi-"));
+    folders.push(dir);
+    for (const name of names) await writeFile(join(dir, name), name);
+    return dir;
+  };
+  afterEach(async () => {
+    await Promise.all(folders.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  });
+
+  test("makes one queue, ordered across all of them", async () => {
+    const january = await folderWith("b.txt");
+    const february = await folderWith("a.txt");
+    const files = await scanFolders([january, february], "name");
+    expect(files.map((f) => f.name)).toEqual(["a.txt", "b.txt"]);
+    expect(files.map((f) => f.folder)).toEqual([february, january]);
+  });
+
+  test("records each file's own folder and absolute path", async () => {
+    const dir = await folderWith("only.txt");
+    const [file] = await scanFolders([dir], "name");
+    expect(file!.folder).toBe(dir);
+    expect(file!.path).toBe(join(dir, "only.txt"));
+  });
+
+  test("pairs the same filename across two folders as siblings", async () => {
+    const january = await folderWith("IMG_1.HEIC");
+    const february = await folderWith("IMG_1.HEIC");
+    const files = await scanFolders([january, february], "name");
+    expect(files[0]!.siblings.map((s) => s.path)).toEqual([join(february, "IMG_1.HEIC")]);
+    expect(files[1]!.siblings.map((s) => s.path)).toEqual([join(january, "IMG_1.HEIC")]);
+  });
+
+  test("survives a folder that cannot be read", async () => {
+    const good = await folderWith("here.txt");
+    const files = await scanFolders([good, join(good, "does-not-exist")], "name");
+    expect(files.map((f) => f.name)).toEqual(["here.txt"]);
   });
 });
