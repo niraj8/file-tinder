@@ -204,3 +204,48 @@ describe("POST /api/quit", () => {
     await own.stop();
   });
 });
+
+describe("POST /api/rename", () => {
+  const rename = (name: string, newName: string) =>
+    fetch(url("/api/rename"), { method: "POST", body: JSON.stringify({ name, newName }) });
+
+  test("renames the file and returns its refreshed siblings", async () => {
+    await writeFile(join(dir, "notes (1).md"), "# copy");
+    const res = await rename("big.bin", "notes.bin");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.name).toBe("notes.bin");
+    expect(body.siblings.map((s: { name: string }) => s.name).sort())
+      .toEqual(["notes (1).md", "notes.md"]);
+    expect((await readdir(dir)).includes("notes.bin")).toBe(true);
+  });
+
+  test("409 on a collision, leaving both files alone", async () => {
+    const res = await rename("big.bin", "notes.md");
+    expect(res.status).toBe(409);
+    expect(await Bun.file(join(dir, "notes.md")).text()).toBe("# hello");
+    expect((await readdir(dir)).includes("big.bin")).toBe(true);
+  });
+
+  test("422 on an invalid name", async () => {
+    expect((await rename("big.bin", ".hidden")).status).toBe(422);
+    expect((await rename("big.bin", "  ")).status).toBe(422);
+  });
+
+  test("410 when the file is already gone", async () => {
+    expect((await rename("ghost.bin", "new.bin")).status).toBe(410);
+  });
+
+  test("404 without a new name", async () => {
+    const res = await fetch(url("/api/rename"), {
+      method: "POST", body: JSON.stringify({ name: "big.bin" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test("refuses to reach out of the folder", async () => {
+    expect((await rename("big.bin", "../escaped.bin")).status).toBe(422);
+    // An unresolvable source is 404 rather than 410: it never named a file here at all.
+    expect((await rename("../outside.bin", "new.bin")).status).toBe(404);
+  });
+});

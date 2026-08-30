@@ -1,10 +1,12 @@
 /** The local HTTP server: the app, the file bytes, and the mutations. */
-import { join, resolve, sep } from "node:path";
+import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { contentTypeFor, kindOf } from "./kinds";
-import { scanFolder } from "./scan";
+import { scanFolder, siblingsFor } from "./scan";
 import { trashFile, restoreFile } from "./trash";
+import { renameFile, type RenameFailure } from "./rename";
+import { resolveInFolder } from "./paths";
 import type { Options } from "./options";
 
 /** A running file-tinder server. */
@@ -28,17 +30,13 @@ export interface ServerHooks {
 const APP_HTML = join(import.meta.dir, "..", "public", "index.html");
 const ARCHIVE_LIMIT = 40;
 
-/**
- * Resolve a user-supplied name against the target folder, refusing anything that
- * escapes it or reaches into a subdirectory. Returns null rather than throwing, so
- * every caller has to handle the refusal.
- */
-function resolveInFolder(folder: string, name: string): string | null {
-  if (name === "" || name.includes("\0")) return null;
-  const root = resolve(folder);
-  const path = resolve(root, name);
-  return path.startsWith(root + sep) && !path.slice(root.length + 1).includes(sep) ? path : null;
-}
+/** How each rename refusal is reported, mirroring the other mutations' statuses. */
+const RENAME_STATUS: Record<RenameFailure, number> = {
+  invalid: 422,
+  unresolvable: 404,
+  vanished: 410,
+  collision: 409,
+};
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -196,6 +194,14 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
         } catch (error) {
           return json({ error: (error as Error).message }, 409);
         }
+      }
+
+      if (isPost && pathname === "/api/rename") {
+        const body = await readJsonBody(request);
+        if (!body.name || typeof body.newName !== "string") return notFound();
+        const result = await renameFile(folder, body.name, body.newName);
+        if (!result.ok) return json({ error: result.message }, RENAME_STATUS[result.reason]);
+        return json({ ok: true, name: result.name, siblings: await siblingsFor(folder, result.name) });
       }
 
       if (isPost && pathname === "/api/open") {

@@ -18,10 +18,12 @@ The folder defaults to `~/Downloads`, and only loose files are shown — subfold
 | Key | Action |
 | --- | --- |
 | `←` | trash (macOS Trash, recoverable) |
-| `→` | keep |
-| `↓` | skip for now |
+| `→` | keep — leaves the file exactly where it is, untouched |
+| `r` | rename, with the basename pre-selected (`Enter` commits, `Escape` cancels) |
 | `o` | open in the default app |
 | `u` | undo the last decision |
+
+Renaming refuses to overwrite an existing file, so nothing is ever lost to a name clash. It isn't a verdict either — after renaming you still press `←` or `→`.
 
 ### Options
 
