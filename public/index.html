@@ -68,14 +68,49 @@
   .callout.stale{background:rgba(255,92,114,.08);border:1px solid rgba(255,92,114,.26);color:#ffa9b5}
   .callout.err{background:rgba(255,92,114,.14);border:1px solid rgba(255,92,114,.4);color:#ffc2ca}
 
-  .acts{border-top:1px solid var(--line);padding:14px 22px;display:grid;
-        grid-template-columns:1fr 1fr;gap:8px}
-  .act{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;
-       border-radius:8px;background:var(--panel2);border:1px solid var(--line);font-size:12px}
+  /* The legend is the product: two verdicts you read from across the room, and a
+     quieter row of tools under them. Sized so the keycap is as readable as the word. */
+  .prog{height:4px;border-radius:2px;background:var(--panel2);overflow:hidden}
+  .prog i{display:block;height:100%;background:var(--dimmer);transition:width .2s ease}
+  .fine{margin:2px 0 0;font-size:11px;line-height:1.5;color:var(--dimmer);text-align:center}
+  .fine kbd{font-size:10px;padding:1px 5px}
+
+  .acts{border-top:1px solid var(--line);padding:16px 22px;display:grid;gap:10px}
+  .verdicts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .act{display:flex;align-items:center;justify-content:center;gap:12px;padding:18px 10px;
+       border-radius:10px;background:var(--panel2);border:1px solid var(--line);
+       font-family:var(--sans);font-size:24px;font-weight:600;letter-spacing:-.01em;
+       color:var(--ink);cursor:pointer;-webkit-appearance:none;
+       transition:background .12s ease,border-color .12s ease}
+  .act kbd{color:inherit;font-size:22px;padding:5px 11px;border-radius:7px;
+           border-bottom-width:3px;background:rgba(0,0,0,.25)}
+  .act:hover{background:var(--line)}
+  .act:active{transform:translateY(1px)}
+  .act:disabled{opacity:.3;cursor:default;transform:none}
+  .act:disabled:hover{background:var(--panel2)}
   /* Verdicts are coloured, tools are not. */
-  .act.t{color:var(--trash)} .act.k{color:var(--keep)}
-  .act.r{color:var(--dim)} .act.o{color:var(--dim)}
+  .act.t{color:var(--trash);border-color:rgba(255,92,114,.3);background:rgba(255,92,114,.07)}
+  .act.k{color:var(--keep);border-color:rgba(61,220,151,.3);background:rgba(61,220,151,.07)}
+  .act.t:hover{background:rgba(255,92,114,.16)}
+  .act.k:hover{background:rgba(61,220,151,.16)}
+  .tools .act{font-size:15px;font-weight:500;padding:11px 8px;gap:8px;color:var(--dim)}
+  .tools .act kbd{font-size:14px;padding:3px 8px;border-bottom-width:2px}
   body.busy .acts{opacity:.45}
+  @media (max-width:880px){
+    .act{font-size:18px;padding:13px 8px}
+    .act kbd{font-size:17px;padding:4px 9px}
+    .tools .act{font-size:13px;padding:9px 6px}
+    .tools .act kbd{font-size:12px;padding:3px 7px}
+  }
+
+  /* The done screen's receipt: what went to the Trash, in case one of them shouldn't have. */
+  .receipt{max-width:420px;width:100%;text-align:left;display:grid;gap:6px;
+           max-height:34vh;overflow:auto}
+  .receipt .line{font-family:var(--mono);font-size:12.5px;color:var(--dim);
+                 word-break:break-word;overflow-wrap:anywhere}
+  .receipt .sect{border:0;padding:0;margin:0}
+  .done-acts{display:grid;grid-template-columns:1fr;gap:10px;width:260px}
 
   /* centred screens */
   .screen{height:100vh;display:flex;flex-direction:column;align-items:center;
@@ -97,6 +132,22 @@
                 background:#22242e;border:1px solid #363a48;border-bottom-width:3px}
   .keycast .what{font-size:15px;letter-spacing:.02em;color:var(--dim)}
 
+  /* Says what just happened, and that it can be taken back. Top-left, where a preview
+     is least likely to have anything you are still reading; pointer-events:none so it
+     never intercepts a click on whatever it does overlap. */
+  .toast{position:fixed;top:20px;left:20px;z-index:45;max-width:min(460px,50vw);
+         display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:11px;
+         pointer-events:none;font-size:14px;line-height:1.4;
+         background:rgba(12,13,18,.92);border:1px solid var(--line);
+         box-shadow:0 14px 36px rgba(0,0,0,.5);opacity:0;transform:translateY(-6px);
+         transition:opacity .22s ease,transform .22s ease;backdrop-filter:blur(6px)}
+  .toast.on{opacity:1;transform:none;transition-duration:.08s}
+  .toast b{font-weight:600;word-break:break-word;overflow-wrap:anywhere}
+  .toast .hint{color:var(--dim);white-space:nowrap}
+  .toast.trash{border-color:rgba(255,92,114,.4);color:var(--trash)}
+  .toast.keep{border-color:rgba(61,220,151,.4);color:var(--keep)}
+  .toast.undo{border-color:var(--line);color:var(--ink)}
+
   .flash{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:40;transition:opacity .28s}
   .flash.on{opacity:1;transition:opacity .04s}
   .flash.trash{background:radial-gradient(120% 90% at 0% 50%,rgba(255,92,114,.4),transparent 62%)}
@@ -106,11 +157,13 @@
 <div id="root" tabindex="-1"></div>
 <div class="flash" id="flash"></div>
 <div class="keycast" id="keycast"></div>
+<div class="toast" id="toast"></div>
 
 <script type="module">
 const root = document.getElementById("root");
 const flashEl = document.getElementById("flash");
 const keycastEl = document.getElementById("keycast");
+const toastEl = document.getElementById("toast");
 
 let queue = [];
 let index = 0;
@@ -165,11 +218,8 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g,
 
 const fileUrl = (file) => `/f/${encodeURIComponent(file.path)}`;
 
-/** The folder a file came from, named the way you would say it out loud. */
-const folderLabel = (path) => path.split("/").filter(Boolean).pop() ?? path;
-
-/** True once the queue spans more than one folder, which decides whether to show it. */
-const manyFolders = () => new Set(queue.map((f) => f.folder)).size > 1;
+/** Bytes still undecided. What "nearly done" actually means when the queue is sorted by size. */
+const pendingBytes = () => queue.slice(index).reduce((total, file) => total + file.size, 0);
 
 const OPAQUE_NOTE = "No preview a browser can render. The dossier is the whole decision.";
 
@@ -255,13 +305,28 @@ function warningsHtml(file) {
   return parts.join("");
 }
 
-/** The sibling section, heading included, or nothing at all when there are none. */
+/**
+ * One legend button, drawn from the action table. tabindex -1: the keyboard already
+ * drives every one of these, and a focusable button would only fight reclaimFocus for
+ * the arrow keys.
+ */
+function act(name, cls, off = false) {
+  const { cap, label } = ACTIONS[name];
+  return `<button type="button" class="act ${cls}" data-act="${name}" tabindex="-1"${
+    off ? " disabled" : ""}>${cap ? `<kbd>${cap}</kbd> ` : ""}${label}</button>`;
+}
+
+/**
+ * The sibling section, heading included, or nothing at all when there are none. A
+ * sibling is only worth locating when it sits somewhere other than this card's own
+ * folder — inside one folder the path would be the same line repeated.
+ */
 function siblingsHtml(file) {
   if (file.siblings.length === 0) return "";
-  const elsewhere = manyFolders();
   return `<div class="sect">Possible siblings</div>` + file.siblings
     .map((s) => `<div class="row"><dt>${formatSize(s.size)}</dt><dd>${escapeHtml(s.name)}${
-      elsewhere ? `<br><span class="muted">${escapeHtml(folderLabel(s.folder))}</span>` : ""
+      s.folder === file.folder ? ""
+        : `<br><span class="muted">${escapeHtml(s.folder)}</span>`
     }</dd></div>`)
     .join("");
 }
@@ -276,10 +341,11 @@ function dossierHtml(file) {
     <div class="dhead">
       <span class="tag">${escapeHtml(extensionOf(file.name)) || "no ext"}</span>
       <span class="tag">${index + 1} of ${queue.length}</span>
+      <span class="tag">${formatSize(pendingBytes())} left</span>
       <h1 id="title">${escapeHtml(file.name)}</h1>
     </div>
     <div class="rows">
-      ${manyFolders() ? row("Folder", escapeHtml(folderLabel(file.folder))) : ""}
+      ${row("Folder", escapeHtml(file.folder))}
       ${row("Size", formatSize(file.size))}
       ${row("Modified", `${absolute(file.mtime)}<br><span class="muted">${relative(file.mtime)}</span>`)}
       ${row("Opened", opened)}
@@ -293,10 +359,17 @@ function dossierHtml(file) {
     </div>
     <div id="warnings">${warningsHtml(file)}</div>
     <div class="acts">
-      <div class="act t"><kbd>&larr;</kbd> Trash</div>
-      <div class="act k"><kbd>&rarr;</kbd> Keep</div>
-      <div class="act r"><kbd>r</kbd> Rename</div>
-      <div class="act o"><kbd>o</kbd> Open</div>
+      <div class="prog"><i style="width:${(index / queue.length) * 100}%"></i></div>
+      <div class="verdicts">
+        ${act("trash", "t")}
+        ${act("keep", "k")}
+      </div>
+      <div class="tools">
+        ${act("rename", "r")}
+        ${act("open", "o")}
+        ${act("undo", "u", undoStack.length === 0)}
+      </div>
+      <p class="fine">Trash means the macOS Trash. <kbd>U</kbd> puts the last one back.</p>
     </div>
   </div>`;
 }
@@ -337,24 +410,50 @@ function render() {
 }
 
 function renderDone() {
-  let trashed = 0, kept = 0, reclaimed = 0;
+  let kept = 0, reclaimed = 0;
+  const trashedNames = [];
   for (const [path, decision] of decisions) {
     const file = queue.find((f) => f.path === path);
-    if (decision === "trash") { trashed++; reclaimed += file?.size ?? 0; }
+    if (decision === "trash") { trashedNames.push(file?.name ?? path); reclaimed += file?.size ?? 0; }
     else kept++;
   }
   const stat = (value, label, colour) =>
     `<div><b${colour ? ` style="color:${colour}"` : ""}>${value}</b><span>${label}</span></div>`;
 
+  // The last chance to catch a wrong call: undo is gone by here, but the Finder's own
+  // Put Back is not. Every name is listed — a truncated list would hide exactly the
+  // mistake this is here to catch — and the list scrolls if it has to.
+  const receipt = trashedNames.length === 0 ? "" : `<div class="receipt">
+    <div class="sect">In the Trash</div>
+    ${trashedNames.map((name) => `<div class="line">${escapeHtml(name)}</div>`).join("")}
+  </div>`;
+
   root.innerHTML = `<div class="screen">
     <h2>Queue empty.</h2>
     <div class="nums">
-      ${stat(trashed, "trashed", "var(--trash)")}
+      ${stat(trashedNames.length, "trashed", "var(--trash)")}
       ${stat(kept, "kept", "var(--keep)")}
       ${stat(formatSize(reclaimed), "reclaimed")}
     </div>
+    ${receipt}
+    ${trashedNames.length === 0 ? "" : `<div class="tools done-acts">
+      ${act("openTrash", "o")}
+    </div>`}
   </div>`;
 }
+
+let toastTimer = null;
+
+/** Announce what just happened, and for how long it can still be taken back. */
+function toast(kind, html) {
+  toastEl.className = `toast ${kind}`;
+  toastEl.innerHTML = html;
+  requestAnimationFrame(() => toastEl.classList.add("on"));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("on"), 3400);
+}
+
+const UNDO_HINT = `<span class="hint"><kbd>U</kbd> undo</span>`;
 
 function flash(kind) {
   flashEl.className = `flash ${kind}`;
@@ -392,7 +491,7 @@ async function trashCurrent(file) {
 
 /** Apply a decision to the current card and move on. */
 async function decide(decision) {
-  if (busy || index >= queue.length) return;
+  if (busy || editing || index >= queue.length) return;
   const file = current();
   notice = null;
 
@@ -400,6 +499,7 @@ async function decide(decision) {
     decisions.set(file.path, decision);
     undoStack.push({ index, path: file.path, name: file.name, decision, trashed: null });
     flash(decision);
+    if (notice === null) toast("keep", `<b>${escapeHtml(file.name)}</b> kept ${UNDO_HINT}`);
     index++;
     render();
     return;
@@ -419,13 +519,18 @@ async function decide(decision) {
   decisions.set(file.path, decision);
   undoStack.push({ index, path: file.path, name: file.name, decision, trashed });
   flash(decision);
+  // A notice here means the trash was odd enough that undo might fail — let it stand
+  // alone rather than promising undo in a toast beside it.
+  if (notice === null) {
+    toast("trash", `<b>${escapeHtml(file.name)}</b> moved to the Trash ${UNDO_HINT}`);
+  }
   index++;
   render();
 }
 
 /** Reverse the last decision, restoring the file if it was trashed. */
 async function undo() {
-  if (busy || undoStack.length === 0) return;
+  if (busy || editing || undoStack.length === 0) return;
   const last = undoStack.pop();
   notice = null;
 
@@ -444,6 +549,10 @@ async function undo() {
 
   decisions.delete(last.path);
   index = last.index;
+  if (notice === null) {
+    toast("undo", `<b>${escapeHtml(last.name)}</b> ${
+      last.decision === "trash" ? "is back out of the Trash." : "is up for decision again."}`);
+  }
   render();
 }
 
@@ -551,23 +660,18 @@ async function commitRename(input) {
 }
 
 function openInDefaultApp() {
-  if (busy || index >= queue.length) return;
+  if (busy || editing || index >= queue.length) return;
   void fetch("/api/open", { method: "POST", body: JSON.stringify({ path: current().path }) });
 }
 
-/** What each key is called on the on-screen press indicator. */
-const KEYCAST = {
-  ArrowLeft: { cap: "\u2190", what: "Trash" },
-  ArrowRight: { cap: "\u2192", what: "Keep" },
-  r: { cap: "R", what: "Rename" },
-  o: { cap: "O", what: "Open" },
-  u: { cap: "U", what: "Undo" },
-};
 /** While the rename editor is open only these two mean anything; the rest is typing. */
 const KEYCAST_EDITING = {
-  Enter: { cap: "\u21a9", what: "Confirm" },
-  Escape: { cap: "esc", what: "Cancel" },
+  Enter: { cap: "\u21a9", label: "Confirm" },
+  Escape: { cap: "esc", label: "Cancel" },
 };
+
+/** A keydown reduced to the name the tables use: one-character keys are case-blind. */
+const keyName = (event) => (event.key.length === 1 ? event.key.toLowerCase() : event.key);
 
 let keycastTimer = null;
 
@@ -576,16 +680,47 @@ function showKey(event) {
   // reload — precisely the lie this is meant to avoid telling on camera.
   if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  const entry = editing ? KEYCAST_EDITING[key] : KEYCAST[key];
+  const entry = editing ? KEYCAST_EDITING[keyName(event)] : BY_KEY.get(keyName(event));
   if (!entry) return;
 
   keycastEl.innerHTML = `<span class="cap">${escapeHtml(entry.cap)}</span>
-    <span class="what">${escapeHtml(entry.what)}</span>`;
+    <span class="what">${escapeHtml(entry.label)}</span>`;
   requestAnimationFrame(() => keycastEl.classList.add("on"));
   clearTimeout(keycastTimer);
   keycastTimer = setTimeout(() => keycastEl.classList.remove("on"), 850);
 }
+
+/**
+ * Every action the card offers, in one place: the key that triggers it, how that key is
+ * drawn, and what it does. The keyboard handler, the legend buttons and the press
+ * indicator all read this table, so a key cannot come to mean one thing on screen and
+ * another in the handler.
+ */
+const ACTIONS = {
+  trash:  { key: "ArrowLeft",  cap: "\u2190", label: "Trash",  run: () => void decide("trash") },
+  keep:   { key: "ArrowRight", cap: "\u2192", label: "Keep",   run: () => void decide("keep") },
+  rename: { key: "r",          cap: "R",      label: "Rename", run: startRename },
+  open:   { key: "o",          cap: "O",      label: "Open",   run: openInDefaultApp },
+  undo:   { key: "u",          cap: "U",      label: "Undo",   run: () => void undo() },
+  // Keyless: it exists only on the done screen, where there is no card left to drive.
+  openTrash: { key: null, cap: "", label: "Open the Trash",
+               run: () => void fetch("/api/open-trash", { method: "POST" }) },
+};
+
+/** The same actions, found by the key that triggers them. */
+const BY_KEY = new Map(Object.values(ACTIONS)
+  .filter((action) => action.key !== null)
+  .map((action) => [action.key, action]));
+
+// Delegated, so it survives every re-render of the card.
+root.addEventListener("click", (event) => {
+  const button = event.target.closest(".act");
+  if (button && !button.disabled) ACTIONS[button.dataset.act]?.run();
+});
+// Clicking a button must not pull focus off the root the arrow keys are read from.
+root.addEventListener("mousedown", (event) => {
+  if (event.target.closest(".act")) event.preventDefault();
+});
 
 // Capture phase, so a key still shows while the rename input has focus.
 addEventListener("keydown", showKey, true);
@@ -596,13 +731,10 @@ addEventListener("keydown", (event) => {
       (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-  switch (event.key) {
-    case "ArrowLeft":  event.preventDefault(); void decide("trash"); break;
-    case "ArrowRight": event.preventDefault(); void decide("keep"); break;
-    case "u": case "U": event.preventDefault(); void undo(); break;
-    case "r": case "R": event.preventDefault(); startRename(); break;
-    case "o": case "O": event.preventDefault(); openInDefaultApp(); break;
-  }
+  const action = BY_KEY.get(keyName(event));
+  if (!action) return;
+  event.preventDefault();
+  action.run();
 });
 
 setInterval(reclaimFocus, 250);

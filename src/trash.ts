@@ -16,7 +16,8 @@ import { readdir, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const TRASH_DIR = join(homedir(), ".Trash");
+/** Where trashed files land, and what the done screen opens in the Finder. */
+export const TRASH_DIR = join(homedir(), ".Trash");
 
 /** Where a trashed file ended up, and how much can be promised about it. */
 export interface TrashResult {

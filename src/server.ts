@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { contentTypeFor, kindOf } from "./kinds";
 import { scanFolders, siblingsFor } from "./scan";
-import { trashFile, restoreFile } from "./trash";
+import { trashFile, restoreFile, TRASH_DIR } from "./trash";
 import { iconPng } from "./icon";
 import { renameFile, type RenameFailure } from "./rename";
 import { resolveInFolders } from "./paths";
@@ -255,6 +255,13 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
         const { path } = await targetOf(request);
         if (path === null) return notFound();
         Bun.spawn(["open", path], { stdout: "ignore", stderr: "ignore" });
+        return json({ ok: true });
+      }
+
+      // Argument-free on purpose: the client never names the folder, so this cannot be
+      // talked into opening anything but the Trash.
+      if (isPost && pathname === "/api/open-trash") {
+        Bun.spawn(["open", TRASH_DIR], { stdout: "ignore", stderr: "ignore" });
         return json({ ok: true });
       }
 
