@@ -89,9 +89,23 @@ Trash the junk by hand, sort the rest by rule.
 
 ```bash
 bun install
-bun run index.ts ~/Downloads
+make up                 # or make up FOLDER=~/Desktop
 bun test
 ```
+
+## Releasing
+
+```bash
+make release V=patch    # or minor, major, or an exact 0.1.3
+```
+
+`bun pm version` bumps `package.json`, commits it, and tags that commit; the push carries
+the tag along.
+
+Homebrew installs the tag tarball, and `--version` reads `package.json` out of it, so the
+bump has to be in the tagged commit. The release workflow refuses a tag that does not
+match `package.json`, so a forgotten bump fails the release instead of shipping a wrong
+`--version`.
 
 ## License
 
