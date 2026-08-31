@@ -1,0 +1,55 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+
+      - name: Compute source tarball sha256
+        id: tarball
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          # GitHub generates the tag tarball lazily; retry until it is served.
+          for i in 1 2 3 4 5; do
+            if curl -fsSL --retry 3 -o source.tar.gz "$url"; then break; fi
+            sleep 5
+          done
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 source.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out tap
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: niraj8/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: Bump formula
+        working-directory: tap
+        run: |
+          formula=Formula/file-tinder.rb
+          sed -i -E \
+            -e "s|^  url \".*\"|  url \"${{ steps.tarball.outputs.url }}\"|" \
+            -e "s|^  sha256 \".*\"|  sha256 \"${{ steps.tarball.outputs.sha256 }}\"|" \
+            "$formula"
+          if git diff --quiet -- "$formula"; then
+            echo "formula unchanged, nothing to push"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "file-tinder ${GITHUB_REF_NAME}" -- "$formula"
+          git push
