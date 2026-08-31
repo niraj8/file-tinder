@@ -20,6 +20,9 @@ export const USAGE = `file-tinder — swipe through the loose files in a folder.
   --order  size (largest first, default), mtime (oldest first), name
   --port   defaults to ${DEFAULT_PORT}
 
+  -h, --help      print this
+  -v, --version   print the version
+
 Keys: <- trash   -> keep   r rename   o open   u undo`;
 
 /** Turn command-line arguments into the options the server runs with. */

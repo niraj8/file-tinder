@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { stat } from "node:fs/promises";
+import { version } from "./package.json";
 import { parseArgs, USAGE } from "./src/cli";
 import { startServer } from "./src/server";
 import type { RunningServer } from "./src/server";
@@ -14,6 +15,11 @@ const QUIT_GRACE_MS = 15_000;
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
   console.log(USAGE);
+  process.exit(0);
+}
+
+if (argv.includes("--version") || argv.includes("-v")) {
+  console.log(`file-tinder ${version}`);
   process.exit(0);
 }
 

@@ -54,6 +54,7 @@ file-tinder [folder...] [--order size|mtime|name] [--port N]
 
 - `--order size` — largest first (default). `mtime` is oldest first, `name` is alphabetical.
 - `--port` — defaults to `8777`, moves to the next free port if taken.
+- `-v`, `--version` — print the version and exit.
 
 ## Tip: pair it with `organize`
 
