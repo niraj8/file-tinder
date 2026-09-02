@@ -5,6 +5,16 @@
  * the attribute has to be read and decoded as a binary plist instead.
  */
 
+import { capture } from "./spawn";
+
+/**
+ * The system tools, by absolute path. `xattr` in particular is a name PyPI also installs,
+ * and a Python one earlier on the PATH takes different flags — the attribute is then read
+ * with the wrong tool, or not at all.
+ */
+const XATTR = "/usr/bin/xattr";
+const PLUTIL = "/usr/bin/plutil";
+
 /** The order cards are presented in. */
 export type Order = "size" | "mtime" | "name";
 
@@ -26,13 +36,9 @@ async function readHexAttribute(path: string, attribute: string): Promise<string
 }
 
 async function readAttribute(path: string, attribute: string, asHex: boolean): Promise<string | null> {
-  const proc = Bun.spawn(["xattr", asHex ? "-px" : "-p", attribute, path], {
-    stdout: "pipe",
-    stderr: "ignore",
-  });
-  const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-  if (exitCode !== 0) return null;
-  const value = stdout.trim();
+  const result = await capture([XATTR, asHex ? "-px" : "-p", attribute, path]);
+  if (result === null || result.exitCode !== 0) return null;
+  const value = result.stdout.trim();
   return value === "" ? null : value;
 }
 
@@ -46,12 +52,9 @@ export async function readWhereFrom(path: string): Promise<string[]> {
   if (hex === null) return [];
   try {
     const bytes = Buffer.from(hex.replace(/\s+/g, ""), "hex");
-    const proc = Bun.spawn(["plutil", "-convert", "json", "-o", "-", "-"], {
-      stdin: bytes, stdout: "pipe", stderr: "ignore",
-    });
-    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-    if (exitCode !== 0) return [];
-    const parsed: unknown = JSON.parse(stdout);
+    const result = await capture([PLUTIL, "-convert", "json", "-o", "-", "-"], bytes);
+    if (result === null || result.exitCode !== 0) return [];
+    const parsed: unknown = JSON.parse(result.stdout);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((entry): entry is string => typeof entry === "string" && entry !== "");
   } catch {
