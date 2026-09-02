@@ -8,6 +8,7 @@ import { trashFile, restoreFile, TRASH_DIR } from "./trash";
 import { iconPng } from "./icon";
 import { renameFile, type RenameFailure } from "./rename";
 import { resolveInFolders } from "./paths";
+import { capture, run } from "./spawn";
 import type { Options } from "./options";
 // Inlined at build time rather than read from disk: the compiled binary Homebrew
 // ships has no public/ next to it.
@@ -100,9 +101,7 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
   const heicJpeg = async (path: string): Promise<Response | null> => {
     const out = await derivedPath(path, ".jpg");
     if (!(await Bun.file(out).exists())) {
-      const proc = Bun.spawn(["sips", "-s", "format", "jpeg", path, "--out", out],
-        { stdout: "ignore", stderr: "ignore" });
-      if ((await proc.exited) !== 0) return null;
+      if ((await run(["sips", "-s", "format", "jpeg", path, "--out", out])) !== 0) return null;
     }
     return new Response(Bun.file(out), {
       headers: { "content-type": "image/jpeg", "content-disposition": "inline" },
@@ -161,12 +160,12 @@ export function createServer(options: Options, hooks: ServerHooks = {}): Running
     if (!(await Bun.file(path).exists())) return notFound();
 
     const isZip = path.toLowerCase().endsWith(".zip");
-    const proc = Bun.spawn(isZip ? ["unzip", "-Z1", path] : ["tar", "-tf", path],
-      { stdout: "pipe", stderr: "ignore" });
-    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-    if (exitCode !== 0) return json({ entries: [], total: 0, unreadable: true });
+    const listing = await capture(isZip ? ["unzip", "-Z1", path] : ["tar", "-tf", path]);
+    if (listing === null || listing.exitCode !== 0) {
+      return json({ entries: [], total: 0, unreadable: true });
+    }
 
-    const all = stdout.split("\n").filter((line) => line !== "");
+    const all = listing.stdout.split("\n").filter((line) => line !== "");
     return json({ entries: all.slice(0, ARCHIVE_LIMIT), total: all.length });
   };
 

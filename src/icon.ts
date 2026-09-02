@@ -6,6 +6,8 @@
  * extension when the file has no preview a browser can render. Reached through JXA for
  * the same reason as the Trash: it needs no Automation permission.
  */
+import { run } from "./spawn";
+
 /**
  * Type 4 is `NSBitmapImageFileTypePNG`. The numeric form survives the AppKit enum
  * renames; the symbolic one does not.
@@ -32,10 +34,8 @@ function run(argv) {
 export async function iconPng(path: string, out: string): Promise<boolean> {
   if (await Bun.file(out).exists()) return true;
 
-  const proc = Bun.spawn(["osascript", "-l", "JavaScript", "-e", ICON_SCRIPT, path, out], {
-    stdout: "ignore",
-    stderr: "ignore",
-  });
-  if ((await proc.exited) !== 0) return false;
+  if ((await run(["osascript", "-l", "JavaScript", "-e", ICON_SCRIPT, path, out])) !== 0) {
+    return false;
+  }
   return Bun.file(out).exists();
 }
